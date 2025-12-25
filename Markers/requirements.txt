@@ -1,0 +1,14 @@
+# Requirements for generate_circle.py and generate_circle_simple.py
+#
+# These scripts use only Python standard library modules:
+# - argparse
+# - random
+# - math
+# - pathlib
+# - sys
+# - xml.etree.ElementTree
+#
+# No external dependencies are required.
+#
+# Python 3.x is required (tested with Python 3.6+)
+

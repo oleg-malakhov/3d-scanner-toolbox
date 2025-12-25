@@ -1,0 +1,16 @@
+# Requirements for Revopoint Dual Axis Turntable Controller
+#
+# Core dependencies (required)
+bleak>=0.20.0          # Bluetooth Low Energy communication
+flask>=2.0.0           # REST API server
+requests>=2.25.0       # HTTP client for CLI
+
+# Optional dependencies
+# pywinauto>=0.6.8     # Windows popup handler (Windows only, uncomment if needed)
+#
+# Note: tkinter is usually included with Python installations.
+# If tkinter is not available, install it via your system package manager:
+#   - Ubuntu/Debian: sudo apt-get install python3-tk
+#   - macOS: tkinter is included with Python from python.org
+#   - Windows: tkinter is included with Python
+
