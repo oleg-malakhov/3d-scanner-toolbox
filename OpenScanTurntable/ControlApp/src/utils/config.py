@@ -145,6 +145,13 @@ class Config:
             "home_position": {
                 "x": 0,
                 "y": 0
+            },
+            "rest_api": {
+                "enabled": True,
+                "host": "127.0.0.1",
+                "port": 5001,
+                "debug": False,
+                "movement_timeout": 60.0
             }
         }
 

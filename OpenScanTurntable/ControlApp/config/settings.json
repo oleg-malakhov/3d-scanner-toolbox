@@ -41,6 +41,13 @@
   "home_position": {
     "x": 0,
     "y": 0
+  },
+  "rest_api": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 5001,
+    "debug": false,
+    "movement_timeout": 60.0
   }
 }
 

@@ -10,6 +10,7 @@ from src.grbl_controller import GRBLController, MachineState
 from src.turntable import Turntable
 from src.utils.config import Config
 from src.utils.serial_utils import list_serial_ports, get_port_display_name
+from src.api.rest_server import RESTServer
 
 
 class MainWindow:
@@ -42,6 +43,20 @@ class MainWindow:
         
         # Turntable/Axis logs go to both console and UI
         self.turntable = Turntable(self.grbl_controller, config, message_callback=self._add_status_message)
+        
+        # Initialize REST server if enabled
+        self.rest_server = None
+        if config.get('rest_api.enabled', True):
+            try:
+                self.rest_server = RESTServer(
+                    turntable=self.turntable,
+                    grbl_controller=self.grbl_controller,
+                    config=config
+                )
+                self.rest_server.start()
+                self._add_status_message(f"REST API server started on port {self.rest_server.port}")
+            except Exception as e:
+                self._add_status_message(f"Failed to start REST API: {e}")
         
         # Auto-connect if enabled
         if config.get('serial.auto_connect', True):
@@ -329,7 +344,13 @@ class MainWindow:
     
     def on_closing(self) -> None:
         """Handle window closing."""
+        # Stop REST server
+        if self.rest_server:
+            self.rest_server.stop()
+        
+        # Disconnect GRBL
         if self.grbl_controller.connected:
             self.grbl_controller.disconnect()
+        
         self.root.destroy()
 
