@@ -1,11 +1,9 @@
 """Axis class for handling individual axis operations and conversions."""
 
+import time
 from dataclasses import dataclass
 from typing import Tuple, Optional, Callable
-from src.grbl_controller import GRBLController
-
-# Hardcoded GRBL max rate (applied to both axes on connection)
-GRBL_MAX_RATE = 15000.0  # steps/min
+from src.grbl import GRBLController, GRBL_MAX_RATE
 
 
 @dataclass
@@ -126,34 +124,58 @@ class Axis:
         
         For axes with full 360° range, calculates the shortest angular path.
         Example: 350° → 10° should go +20° (not -340°).
+        Example: 0° → -45° should go -45° (not +315°).
         
         Args:
-            current_angle: Current angle in degrees
-            target_angle: Target angle in degrees
+            current_angle: Current angle in degrees (normalized to 0-360)
+            target_angle: Target angle in degrees (may be negative or >360)
             
         Returns:
-            Adjusted target angle that represents shortest path
+            Adjusted target angle that represents shortest path (normalized to 0-360)
         """
         # Only apply shortest path for full 360° range
         if self.config.max_angle == 360.0 and self.config.min_angle == 0.0:
-            degrees_to_move = target_angle - current_angle
+            # Normalize current angle to 0-360
+            current_normalized = current_angle % 360.0
+            if current_normalized < 0:
+                current_normalized += 360.0
             
-            # Normalize to -180° to +180° range
+            # Normalize target angle to 0-360 for comparison
+            target_normalized = target_angle % 360.0
+            if target_normalized < 0:
+                target_normalized += 360.0
+            
+            # Calculate direct path distance
+            degrees_to_move = target_normalized - current_normalized
+            
+            # Find shortest path: if > 180°, go the other way
             if degrees_to_move > 180.0:
-                degrees_to_move -= 360.0  # Go backwards instead
-                adjusted_target = current_angle + degrees_to_move
-                self._log(f"[Axis {self.name.upper()}]   Shortest path: {target_angle}° → {adjusted_target}° (wrapped -{360 - (target_angle - current_angle)}°)")
+                # Go backwards (negative direction)
+                degrees_to_move -= 360.0
+                adjusted_target = current_normalized + degrees_to_move
+                # Normalize to 0-360
+                adjusted_target = adjusted_target % 360.0
+                if adjusted_target < 0:
+                    adjusted_target += 360.0
+                self._log(f"[Axis {self.name.upper()}]   Shortest path: {target_angle}° → {adjusted_target}° (wrapped -{360 - abs(degrees_to_move):.1f}°)")
             elif degrees_to_move < -180.0:
-                degrees_to_move += 360.0  # Go forwards instead
-                adjusted_target = current_angle + degrees_to_move
-                self._log(f"[Axis {self.name.upper()}]   Shortest path: {target_angle}° → {adjusted_target}° (wrapped +{360 + (target_angle - current_angle)}°)")
+                # Go forwards (positive direction)
+                degrees_to_move += 360.0
+                adjusted_target = current_normalized + degrees_to_move
+                # Normalize to 0-360
+                adjusted_target = adjusted_target % 360.0
+                if adjusted_target < 0:
+                    adjusted_target += 360.0
+                self._log(f"[Axis {self.name.upper()}]   Shortest path: {target_angle}° → {adjusted_target}° (wrapped +{360 + abs(degrees_to_move):.1f}°)")
             else:
-                adjusted_target = target_angle
+                # Direct path is shortest
+                adjusted_target = target_normalized
+                if abs(degrees_to_move) > 0.001:  # Only log if there's actual movement
+                    self._log(f"[Axis {self.name.upper()}]   Direct path: {target_angle}° → {adjusted_target}° ({degrees_to_move:+.1f}°)")
             
-            # Normalize result to 0-360 range
-            return adjusted_target % 360.0
+            return adjusted_target
         
-        # For limited range axes, return target as-is
+        # For limited range axes, return target as-is (clamped by _normalize_target_angle)
         return target_angle
     
     def _normalize_target_angle(self, desired_angle: float) -> float:
@@ -161,20 +183,20 @@ class Axis:
         Normalize target angle to valid range, applying shortest path if applicable.
         
         Args:
-            desired_angle: Desired target angle
+            desired_angle: Desired target angle (may be negative or >360 for continuous rotation)
             
         Returns:
-            Normalized target angle
+            Normalized target angle (0-360 for continuous rotation, or clamped for limited range)
         """
         min_limit = self.config.min_angle
         max_limit = self.config.max_angle
         
-        # Full 360° range: use modulo and shortest path
+        # Full 360° range: apply shortest path calculation (handles negative angles)
         if min_limit == 0.0 and max_limit == 360.0:
-            normalized = desired_angle % 360.0
-            # Apply shortest path calculation
+            # Don't normalize first - let shortest path handle negative angles
+            # Pass desired_angle directly (could be -45, 315, 405, etc.)
             current = self.current()
-            return self._calculate_shortest_path(current, normalized)
+            return self._calculate_shortest_path(current, desired_angle)
         
         # Limited range: clamp to limits
         if desired_angle < min_limit:
@@ -208,6 +230,20 @@ class Axis:
             self._log(f"[Axis {self.name.upper()}] ✗ Invalid angle: {error_msg}")
             return False
         
+        # Check if GRBL is in a valid state to accept commands
+        from src.grbl import MachineState
+        if self.grbl_controller.machine_state == MachineState.ALARM:
+            self._log(f"[Axis {self.name.upper()}]   ⚠️  GRBL is in alarm state, attempting to unlock...")
+            if not self.grbl_controller.unlock():
+                self._log(f"[Axis {self.name.upper()}]   ✗ Failed to unlock GRBL, aborting movement")
+                return False
+            # Wait a moment for GRBL to process unlock
+            time.sleep(0.2)
+            # Re-check state
+            if self.grbl_controller.machine_state == MachineState.ALARM:
+                self._log(f"[Axis {self.name.upper()}]   ✗ GRBL still in alarm state after unlock attempt, aborting")
+                return False
+        
         # Get current position
         current_angle = self.current()
         self._log(f"[Axis {self.name.upper()}]   Current position: {current_angle:.3f}°")
@@ -227,7 +263,24 @@ class Axis:
             align_cmd = f"G92 Y{current_grbl_units:.3f}"
         
         self._log(f"[Axis {self.name.upper()}]   Aligning work coordinate system: {align_cmd}")
-        self.grbl_controller.send_command(align_cmd, wait_for_ok=True)
+        
+        # Retry G92 command if it fails (GRBL might need a moment to be ready)
+        align_success = False
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            align_success = self.grbl_controller.send_command(align_cmd, wait_for_ok=True)
+            if align_success:
+                break
+            if attempt < max_retries:
+                self._log(f"[Axis {self.name.upper()}]   ⚠️  G92 alignment failed (attempt {attempt}/{max_retries}), retrying...")
+                time.sleep(0.2)  # Brief delay before retry
+        
+        if not align_success:
+            self._log(f"[Axis {self.name.upper()}]   ⚠️  G92 alignment command failed after {max_retries} attempts, aborting movement")
+            # Check if GRBL is in alarm state
+            if self.grbl_controller.machine_state == MachineState.ALARM:
+                self._log(f"[Axis {self.name.upper()}]   GRBL is in alarm state - may need manual intervention")
+            return False
         
         # Convert target to steps (use normalized angle)
         target_steps = self._degrees_to_steps(normalized_degrees)

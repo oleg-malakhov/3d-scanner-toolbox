@@ -6,7 +6,7 @@ from typing import Optional, Dict
 import threading
 import time
 
-from src.grbl_controller import GRBLController, MachineState
+from src.grbl import GRBLController, MachineState
 from src.turntable import Turntable
 from src.utils.config import Config
 from src.utils.serial_utils import list_serial_ports, get_port_display_name
@@ -42,7 +42,13 @@ class MainWindow:
         self.grbl_controller.register_status_callback(self._on_status_update)
         
         # Turntable/Axis logs go to both console and UI
-        self.turntable = Turntable(self.grbl_controller, config, message_callback=self._add_status_message)
+        # Position callback updates UI with latest position
+        self.turntable = Turntable(
+            self.grbl_controller, 
+            config, 
+            message_callback=self._add_status_message,
+            position_callback=self._on_position_update
+        )
         
         # Initialize REST server if enabled
         self.rest_server = None
@@ -279,6 +285,8 @@ class MainWindow:
             self.tilt_btn.config(state='normal')
             self.reset_btn.config(state='normal')
             self.emergency_stop_btn.config(state='normal')
+            # Start position polling when connected
+            self.turntable.start_position_polling()
         else:
             self.status_label.config(text="Disconnected")
             self.connect_btn.config(state='normal')
@@ -289,6 +297,8 @@ class MainWindow:
             self.reset_btn.config(state='disabled')
             self.emergency_stop_btn.config(state='disabled')
             self.machine_state_label.config(text="")
+            # Stop position polling when disconnected
+            self.turntable.stop_position_polling()
     
     def _on_status_update(self, state: MachineState, position: Dict[str, float]) -> None:
         """Handle status update from GRBL."""
@@ -299,10 +309,15 @@ class MainWindow:
         # Update machine state
         self.machine_state_label.config(text=f"| {state.value}")
         
-        # Get current positions from Turntable (in degrees)
-        # Turntable handles all conversions internally
-        x_angle, y_angle = self.turntable.current()
-        
+        # Position updates are now handled by _on_position_update from Turntable polling
+    
+    def _on_position_update(self, x_angle: float, y_angle: float) -> None:
+        """Handle position update from Turntable polling (called from background thread)."""
+        # Use after() to ensure thread-safe UI updates
+        self.root.after(0, lambda: self._do_update_position_ui(x_angle, y_angle))
+    
+    def _do_update_position_ui(self, x_angle: float, y_angle: float) -> None:
+        """Update position UI labels (called on main thread)."""
         self.x_current_label.config(text=f"{x_angle:.1f}°")
         self.y_current_label.config(text=f"{y_angle:.1f}°")
     
@@ -344,6 +359,9 @@ class MainWindow:
     
     def on_closing(self) -> None:
         """Handle window closing."""
+        # Stop position polling
+        self.turntable.stop_position_polling()
+        
         # Stop REST server
         if self.rest_server:
             self.rest_server.stop()

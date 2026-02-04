@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net451</TargetFramework>
+    <AssemblyName>PluginRotaryREST</AssemblyName>
+    <RootNamespace>PluginRotaryREST</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Common">
+      <HintPath>..\..\..\..\..\..\Program Files\Polyga\FlexScan3D 3.5\App\Common.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="PluginRotaryInterface">
+      <HintPath>..\..\..\..\..\..\Program Files\Polyga\FlexScan3D 3.5\App\PluginRotaryInterface.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>
