@@ -1,0 +1,513 @@
+-- ===================================================================
+-- Automated 2-Axis Turntable Scanning Script for FlexScan3D
+-- Fibonacci Lattice Algorithm for Optimal Coverage
+-- Supports full 360° rotation and configurable tilt range
+-- ===================================================================
+-- 
+-- This script uses the Fibonacci Lattice algorithm to calculate optimal
+-- camera positions for uniform sphere coverage. Instead of step-based
+-- iteration, it generates angles algorithmically based on a specified
+-- number of photos.
+--
+-- Algorithm Reference: See Docs/scanning.md for mathematical details
+-- Based on: automated_2axis_turntable_scan.script (step-based version)
+-- ===================================================================
+
+-- ===================================================================
+-- CONFIGURATION CONSTANTS
+-- ===================================================================
+
+-- Primary configuration
+TOTAL_PHOTOS = 20  -- Total number of photos to capture
+
+-- Tilt range constraints (mechanical limits)
+TILT_MIN = -60  -- Minimum tilt angle in degrees
+TILT_MAX = 90   -- Maximum tilt angle in degrees
+
+-- Motor assignments
+ROTATION_MOTOR = 1
+TILT_MOTOR = 2
+
+-- Scanning options
+STABILIZATION_DELAY = 0  -- seconds to wait after movement
+
+-- Debugging options
+STOP_AFTER_PHOTOS = nil  -- Set to a number to stop after N photos (for debugging). nil = no limit
+
+-- Post-processing options
+ALIGN_ENABLED = false  -- Set to true to align scans after completion
+GROUP_ENABLED = false  -- Set to true to combine/group scans after completion
+
+-- Angle sorting strategy
+SORT_STRATEGY = "rotation_first"  -- Options: "none", "rotation_first", "tilt_first", "nearest"
+-- "rotation_first" (default): Groups by tilt, completes rotations at each tilt level
+-- "none": Preserves Fibonacci order exactly
+-- "tilt_first": Alternative grouping
+-- "nearest": Greedy nearest-neighbor optimization
+
+-- ===================================================================
+-- HELPER FUNCTIONS
+-- ===================================================================
+
+--- A safe logging function that uses DisplayString or PrintValue.
+-- @param message The message to log.
+local function log(message)
+    if DisplayString then
+        DisplayString(message)
+    elseif PrintValue then
+        PrintValue(message)
+    else
+        print(message) -- Fallback to basic print
+    end
+end
+
+--- Safely calls a function from the FlexScan3D API, checking for its existence first.
+-- @param func_name The name of the global API function to call.
+-- @param ... Any arguments to pass to the API function.
+local function safe_api_call(func_name, ...)
+    if _G[func_name] == nil then
+        error("FlexScan3D API function '" .. func_name .. "' is not available. Ensure the script is run from within the FlexScan3D application environment.")
+    end
+    return _G[func_name](...)
+end
+
+--- Resets the turntable to its zero position.
+local function reset_turntable()
+    log("Resetting turntable to zero position...")
+    safe_api_call("RotaryReset")
+    Wait(0.5)  -- Brief wait after reset
+    log("Turntable reset complete.")
+end
+
+--- Moves a motor to a target angle using relative positioning.
+-- @param motor The motor index (1 or 2)
+-- @param target_angle The target angle in degrees
+-- @param current_angle The current angle position
+-- @return The new current angle
+local function move_motor_to_angle(motor, target_angle, current_angle)
+    local delta = target_angle - current_angle
+    if math.abs(delta) > 0.1 then  -- Only move if difference is significant
+        log(string.format("Moving motor %d by %.1f degrees (from %.1f to %.1f)...", motor, delta, current_angle, target_angle))
+        local success = safe_api_call("RotaryRotate", motor, delta)
+        if success then
+            Wait(STABILIZATION_DELAY)
+            return target_angle
+        else
+            error(string.format("Failed to move motor %d to angle %.1f", motor, target_angle))
+        end
+    end
+    return current_angle
+end
+
+--- Generates angle pairs using Fibonacci Lattice algorithm.
+-- Always generates exactly total_photos angles, even if some are clamped to limits.
+-- @param total_photos Number of photos to generate
+-- @param tilt_min Minimum tilt angle constraint
+-- @param tilt_max Maximum tilt angle constraint
+-- @return Table of {tilt, rotation} pairs
+local function generate_fibonacci_angles(total_photos, tilt_min, tilt_max)
+    if total_photos <= 0 then
+        error("TOTAL_PHOTOS must be greater than 0")
+    end
+    
+    -- Edge case: single photo
+    if total_photos == 1 then
+        return {{0, 0}}
+    end
+    
+    local angles = {}
+    local phi = (math.sqrt(5) - 1) / 2  -- Golden Ratio
+    
+    for i = 1, total_photos do
+        -- Calculate normalized index (0 to 1)
+        local y = (i - 1) / (total_photos - 1)
+        
+        -- Calculate tilt using Fibonacci Lattice formula
+        -- θ = arccos(1 - 2*y) - 90°
+        local tilt_rad = math.acos(1 - 2 * y)
+        local tilt_deg = math.deg(tilt_rad) - 90
+        
+        -- Clamp tilt to limits (but never reduce photo count)
+        tilt_deg = math.max(tilt_min, math.min(tilt_max, tilt_deg))
+        
+        -- Calculate rotation using Golden Ratio
+        -- φ = 360° * (i-1) * φ_golden (mod 360)
+        local rotation = ((i - 1) * phi * 360) % 360
+        
+        -- Store angle pair
+        angles[i] = {tilt_deg, rotation}
+    end
+    
+    return angles
+end
+
+--- Sorts angle pairs to minimize motor movement.
+-- @param angles Table of {tilt, rotation} pairs
+-- @param strategy Sorting strategy ("none", "rotation_first", "tilt_first", "nearest")
+-- @return Sorted table of angle pairs
+local function sort_angles_for_efficiency(angles, strategy)
+    if strategy == "none" then
+        return angles
+    end
+    
+    if strategy == "rotation_first" then
+        -- Group by tilt level (with tolerance for floating point)
+        local tilt_groups = {}
+        local tilt_tolerance = 1.0  -- degrees
+        
+        for i = 1, #angles do
+            local tilt = angles[i][1]
+            local rotation = angles[i][2]
+            
+            -- Find or create tilt group
+            local group_key = nil
+            for key, _ in pairs(tilt_groups) do
+                if math.abs(key - tilt) < tilt_tolerance then
+                    group_key = key
+                    break
+                end
+            end
+            
+            if group_key == nil then
+                group_key = tilt
+                tilt_groups[group_key] = {}
+            end
+            
+            table.insert(tilt_groups[group_key], {tilt, rotation})
+        end
+        
+        -- Sort rotations within each tilt group
+        for tilt, group in pairs(tilt_groups) do
+            table.sort(group, function(a, b)
+                return a[2] < b[2]  -- Sort by rotation
+            end)
+        end
+        
+        -- Sort tilt groups and concatenate
+        local sorted_tilts = {}
+        for tilt, _ in pairs(tilt_groups) do
+            table.insert(sorted_tilts, tilt)
+        end
+        table.sort(sorted_tilts)
+        
+        local sorted_angles = {}
+        for _, tilt in ipairs(sorted_tilts) do
+            for _, angle_pair in ipairs(tilt_groups[tilt]) do
+                table.insert(sorted_angles, angle_pair)
+            end
+        end
+        
+        return sorted_angles
+    end
+    
+    -- For other strategies, return as-is for now
+    -- (Can be extended later)
+    return angles
+end
+
+--- Validates generated angles for safety and coverage.
+-- @param angles Table of {tilt, rotation} pairs
+-- @return is_valid (boolean), warnings (table), stats (table)
+local function validate_angle_sequence(angles)
+    local is_valid = true
+    local warnings = {}
+    local stats = {
+        total_angles = #angles,
+        clamped_count = 0,
+        unique_tilts = {},
+        min_tilt = math.huge,
+        max_tilt = -math.huge,
+        min_rotation = math.huge,
+        max_rotation = -math.huge
+    }
+    
+    -- Check photo count
+    if #angles ~= TOTAL_PHOTOS then
+        is_valid = false
+        table.insert(warnings, string.format("Photo count mismatch: expected %d, got %d", TOTAL_PHOTOS, #angles))
+    end
+    
+    -- Analyze angles
+    for i = 1, #angles do
+        local tilt = angles[i][1]
+        local rotation = angles[i][2]
+        
+        -- Check limits
+        if tilt < TILT_MIN or tilt > TILT_MAX then
+            is_valid = false
+            table.insert(warnings, string.format("Angle %d: Tilt %.2f° is outside limits [%.1f, %.1f]", i, tilt, TILT_MIN, TILT_MAX))
+        end
+        
+        if rotation < 0 or rotation >= 360 then
+            is_valid = false
+            table.insert(warnings, string.format("Angle %d: Rotation %.2f° is outside valid range [0, 360)", i, rotation))
+        end
+        
+        -- Track clamped angles (at limits)
+        if math.abs(tilt - TILT_MIN) < 0.1 or math.abs(tilt - TILT_MAX) < 0.1 then
+            stats.clamped_count = stats.clamped_count + 1
+        end
+        
+        -- Track unique tilts
+        local tilt_rounded = math.floor(tilt * 10) / 10  -- Round to 0.1°
+        stats.unique_tilts[tilt_rounded] = true
+        
+        -- Track ranges
+        stats.min_tilt = math.min(stats.min_tilt, tilt)
+        stats.max_tilt = math.max(stats.max_tilt, tilt)
+        stats.min_rotation = math.min(stats.min_rotation, rotation)
+        stats.max_rotation = math.max(stats.max_rotation, rotation)
+    end
+    
+    -- Count unique tilts
+    local unique_tilt_count = 0
+    for _ in pairs(stats.unique_tilts) do
+        unique_tilt_count = unique_tilt_count + 1
+    end
+    stats.unique_tilt_count = unique_tilt_count
+    
+    -- Warning if many angles are clamped
+    if stats.clamped_count > TOTAL_PHOTOS * 0.3 then
+        table.insert(warnings, string.format("WARNING: %d angles (%.1f%%) were clamped to limits. This may cause clustering.", 
+            stats.clamped_count, (stats.clamped_count / TOTAL_PHOTOS) * 100))
+    end
+    
+    -- Warning if too few unique tilts (indicates heavy clamping)
+    if unique_tilt_count < TOTAL_PHOTOS * 0.1 then
+        table.insert(warnings, string.format("WARNING: Only %d unique tilt angles. Many angles may be at the same tilt with different rotations.", unique_tilt_count))
+    end
+    
+    return is_valid, warnings, stats
+end
+
+-- ===================================================================
+-- MAIN SCANNING LOGIC
+-- ===================================================================
+
+--- The main function containing the core scanning logic.
+-- @return true if successful, otherwise throws an error.
+local function main()
+    log("==========================================================")
+    log("Starting Fibonacci Lattice 2-axis turntable scanning...")
+    log("==========================================================")
+
+    -- 1. Check Rotary Connection
+    log("Checking rotary table connection...")
+    local rotary_connected = safe_api_call("IsRotaryConnected")
+    if not rotary_connected then
+        error("Rotary table is not connected. Please ensure the turntable is connected and configured.")
+    end
+    log("Rotary table connected successfully.")
+
+    -- 2. Verify Motor Count
+    local num_motors_ok, num_motors = safe_api_call("GetNumMotors")
+    if not num_motors_ok or num_motors < 2 then
+        error(string.format("Insufficient motors available. Expected at least 2, got %d.", num_motors or 0))
+    end
+    log(string.format("Rotary table has %d motor(s) available.", num_motors))
+
+    -- 3. Initialize Scanner
+    log("Attempting to get the first available scanner (index 0)...")
+    local scanner_name = safe_api_call("GetScannerNameFromIndex", 0)
+    if scanner_name == nil then
+        error("Could not find a scanner at index 0. Please ensure a scanner is connected and configured.")
+    end
+    log("Using scanner: " .. scanner_name)
+
+    -- 4. Connect Scanner
+    log("Connecting scanner...")
+    local connect_success = safe_api_call("ScannerConnect")
+    if not connect_success then
+        error("Failed to connect scanner. Please check scanner connection and configuration.")
+    end
+    log("Scanner connected successfully.")
+
+    -- 5. Verify Scanner Connection
+    local is_connected = safe_api_call("IsScannerConnected", scanner_name)
+    if not is_connected then
+        error("Scanner connection verification failed.")
+    end
+
+    -- 6. Initial Turntable Reset
+    reset_turntable()
+
+    -- 7. Generate Fibonacci Angle Sequence
+    log("Generating Fibonacci Lattice angle sequence...")
+    local angle_sequence = generate_fibonacci_angles(TOTAL_PHOTOS, TILT_MIN, TILT_MAX)
+    log(string.format("Generated %d angle pairs using Fibonacci Lattice algorithm.", #angle_sequence))
+    
+    -- 8. Sort Angles for Efficiency
+    local sort_strategy = SORT_STRATEGY or "rotation_first"
+    if sort_strategy ~= "none" then
+        log(string.format("Sorting angles using strategy: %s", sort_strategy))
+        angle_sequence = sort_angles_for_efficiency(angle_sequence, sort_strategy)
+    end
+    
+    -- 9. Validate Angle Sequence
+    log("Validating angle sequence...")
+    local is_valid, warnings, stats = validate_angle_sequence(angle_sequence)
+    
+    -- Display validation results
+    log(string.format("Validation: %d angles, %d unique tilts, %d clamped to limits", 
+        stats.total_angles, stats.unique_tilt_count, stats.clamped_count))
+    
+    if not is_valid then
+        error("Invalid angle sequence generated. Check warnings above.")
+    end
+    
+    for _, warning in ipairs(warnings) do
+        log("WARNING: " .. warning)
+    end
+    
+    -- 10. Display Scan Plan
+    log("----------------------------------------------------------")
+    log(string.format("Scan Plan: %d photos using Fibonacci Lattice algorithm", TOTAL_PHOTOS))
+    if STOP_AFTER_PHOTOS ~= nil then
+        log(string.format("DEBUG MODE: Will stop after %d photos", STOP_AFTER_PHOTOS))
+    end
+    log(string.format("Tilt range: %.1f° to %.1f°", TILT_MIN, TILT_MAX))
+    log(string.format("Rotation: 0° to 360° (full circle)"))
+    log(string.format("Sorting strategy: %s", sort_strategy))
+    log(string.format("Golden Ratio (φ): %.6f", (math.sqrt(5) - 1) / 2))
+    log("Note: Scan() automatically generates meshes based on Scanning_Generation_Type setting")
+    log("----------------------------------------------------------")
+    
+    -- Preview first and last angles
+    if #angle_sequence >= 2 then
+        log(string.format("First angle: Tilt=%.2f°, Rotation=%.2f°", angle_sequence[1][1], angle_sequence[1][2]))
+        log(string.format("Last angle: Tilt=%.2f°, Rotation=%.2f°", angle_sequence[#angle_sequence][1], angle_sequence[#angle_sequence][2]))
+    end
+    log("----------------------------------------------------------")
+
+    -- 11. Initialize Scan Collection
+    local all_group_ids = NewListString()
+    local scan_count = 0
+
+    -- 12. Track current positions for relative movements
+    local current_tilt = 0
+    local current_rotation = 0
+
+    -- 13. Main Scanning Loop
+    for i = 1, #angle_sequence do
+        -- Check if we should stop early for debugging
+        if STOP_AFTER_PHOTOS ~= nil and scan_count >= STOP_AFTER_PHOTOS then
+            log(string.format("----------------------------------------------------------"))
+            log(string.format("DEBUG: Stopping early after %d photos (STOP_AFTER_PHOTOS limit)", STOP_AFTER_PHOTOS))
+            log(string.format("----------------------------------------------------------"))
+            break
+        end
+        
+        local tilt = angle_sequence[i][1]
+        local rotation = angle_sequence[i][2]
+        
+        -- Move motors to target angles
+        current_tilt = move_motor_to_angle(TILT_MOTOR, tilt, current_tilt)
+        current_rotation = move_motor_to_angle(ROTATION_MOTOR, rotation, current_rotation)
+
+        -- Display progress
+        scan_count = scan_count + 1
+        local progress_pct = (scan_count / TOTAL_PHOTOS) * 100
+        local status_msg = string.format("Scan %d/%d (%.1f%%) - Tilt: %.2f°, Rotation: %.2f°", 
+            scan_count, TOTAL_PHOTOS, progress_pct, tilt, rotation)
+        log(status_msg)
+
+        -- Perform scan (Scan() automatically generates meshes)
+        local scan_success, scan_groups = safe_api_call("Scan")
+        
+        if not scan_success then
+            error(string.format("Scan failed at Tilt: %.2f°, Rotation: %.2f°. Aborting scanning process.", tilt, rotation))
+        end
+        
+        if not scan_groups then
+            error(string.format("Scan completed but no group IDs returned at Tilt: %.2f°, Rotation: %.2f°. Aborting scanning process.", tilt, rotation))
+        end
+        
+        -- Handle different return types from Scan()
+        local has_groups = false
+        if type(scan_groups) == "table" then
+            for j = 1, #scan_groups do
+                local group_id = tostring(scan_groups[j])
+                all_group_ids:Add(group_id)
+                log(string.format("  -> Scan group ID: %s", group_id))
+                has_groups = true
+            end
+        elseif scan_groups then
+            -- Single value or NewListString object
+            local group_id = tostring(scan_groups)
+            all_group_ids:Add(group_id)
+            log(string.format("  -> Scan group ID: %s", group_id))
+            has_groups = true
+        end
+        
+        if not has_groups then
+            error(string.format("Scan completed but no valid group IDs returned at Tilt: %.2f°, Rotation: %.2f°. Aborting scanning process.", tilt, rotation))
+        end
+        
+        -- Check again after scan (in case we just reached the limit)
+        if STOP_AFTER_PHOTOS ~= nil and scan_count >= STOP_AFTER_PHOTOS then
+            log(string.format("----------------------------------------------------------"))
+            log(string.format("DEBUG: Stopping early after %d photos (STOP_AFTER_PHOTOS limit)", STOP_AFTER_PHOTOS))
+            log(string.format("----------------------------------------------------------"))
+            break
+        end
+    end
+
+    log("----------------------------------------------------------")
+    log(string.format("Scanning completed successfully: %d photos captured", scan_count))
+
+    -- 14. Post-Processing: Alignment (if enabled)
+    if ALIGN_ENABLED and all_group_ids and #all_group_ids > 0 then
+        log("----------------------------------------------------------")
+        log("Aligning all scans...")
+        -- First, load all groups
+        for i = 1, #all_group_ids do
+            safe_api_call("LoadGroup", all_group_ids[i])
+        end
+        -- Then align
+        local align_success = safe_api_call("Align")
+        if align_success then
+            log("Alignment completed successfully.")
+        else
+            log("WARNING: Alignment failed.")
+        end
+    end
+
+    -- 15. Post-Processing: Grouping/Combining (if enabled)
+    if GROUP_ENABLED and all_group_ids and #all_group_ids > 0 then
+        log("----------------------------------------------------------")
+        log("Combining all scans into a single group...")
+        local combine_success, combined_group_id = safe_api_call("Combine", all_group_ids)
+        if combine_success then
+            log(string.format("Combining completed. Combined group ID: %s", tostring(combined_group_id)))
+        else
+            log("WARNING: Combining failed.")
+        end
+    end
+
+    log("==========================================================")
+    log("Scanning process completed successfully.")
+    log("==========================================================")
+    return true
+end
+
+-- ===================================================================
+-- SCRIPT EXECUTION AND ERROR HANDLING
+-- ===================================================================
+
+local success, err_msg = pcall(main)
+
+if success then
+    log("----------------------------------------------------------")
+    log("Script execution completed successfully.")
+    log("----------------------------------------------------------")
+else
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    log("FATAL ERROR during script execution:")
+    log(tostring(err_msg))
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+end
+
+-- Cleanup: Reset turntable to home position
+reset_turntable()
+
+log("Script finished.")

@@ -1,0 +1,188 @@
+-- ===================================================================
+-- Automated Calibration Script for FlexScan3D with Revopoint Turntable
+-- Updated for FlexScan3D 3.3.x API with Internal Rotary Controls
+-- ===================================================================
+
+-- ===================================================================
+-- CONFIGURATION
+-- ===================================================================
+local config = {
+    -- Calibration parameters
+    TILT_START = -45,    -- Starting tilt angle
+    TILT_END = 45,       -- Ending tilt angle
+    TILT_STEP = 9,       -- Step size for tilt angle
+    ANGLE_START = -45,  -- Starting rotation angle
+    ANGLE_END = 45,     -- Ending rotation angle
+    ANGLE_STEP = 9,     -- Step size for rotation angle
+
+    -- Motor Configuration (1 for rotation, 2 for tilt)
+    ROTATION_MOTOR = 1,
+    TILT_MOTOR = 2,
+    
+    -- Debug Configuration
+    DEBUG_MODE = false,  -- Set to false for full calibration
+    DEBUG_SCAN_LIMIT = 3, -- Number of scans to capture in debug mode
+}
+
+-- ===================================================================
+-- HELPER FUNCTIONS
+-- ===================================================================
+
+--- A safe logging function that uses the new logging API.
+-- @param message The message to log.
+local function log(message)
+    if PrintValue then
+        PrintValue(message)
+    else
+        print(message) -- Fallback to basic print
+    end
+end
+
+--- Safely calls a function from the FlexScan3D API, checking for its existence first.
+-- @param func_name The name of the global API function to call.
+-- @param ... Any arguments to pass to the API function.
+local function safe_api_call(func_name, ...)
+    if _G[func_name] == nil then
+        error("FlexScan3D API function '" .. func_name .. "' is not available. Ensure the script is run from within the FlexScan3D application environment.")
+    end
+    return _G[func_name](...)
+end
+
+--- Resets the turntable to its zero position.
+local function cleanup_turntable()
+    log("Resetting turntable to zero position...")
+    pcall(safe_api_call, "RotaryReset")
+    log("Turntable reset complete.")
+end
+
+-- ===================================================================
+-- MAIN LOGIC
+-- ===================================================================
+
+--- The main function containing the core calibration logic.
+-- @return true if successful, otherwise throws an error.
+local function main()
+    log("Starting automated calibration process...")
+
+    -- 1. Check Rotary Connection
+    log("Checking rotary table connection...")
+    local rotary_connected = safe_api_call("IsRotaryConnected")
+    if not rotary_connected then
+        error("Rotary table is not connected. Please ensure the turntable is connected and configured.")
+    end
+    log("Rotary table connected successfully.")
+
+    -- 2. Initialize Scanner
+    log("Attempting to get the first available scanner (index 0)...")
+    local scanner_name = safe_api_call("GetScannerNameFromIndex", 0)
+    if scanner_name == nil then
+        error("Could not find a scanner at index 0. Please ensure a scanner is connected and configured.")
+    end
+    log("Using scanner: " .. scanner_name)
+
+    -- 3. Initial Turntable Reset
+    local reset_success = safe_api_call("RotaryReset")
+    if not reset_success then
+        error("FAILED to reset turntable to initial position. Stopping script.")
+    end
+    log("Turntable reset to initial position.")
+
+    -- 4. Calibration Loop
+    -- Track current positions for relative movements
+    local current_tilt = 0
+    local current_angle = 0
+    local scan_count = 0
+    
+    -- Debug mode notification
+    if config.DEBUG_MODE then
+        log(string.format("*** DEBUG MODE ENABLED - Will capture only %d images ***", config.DEBUG_SCAN_LIMIT))
+    end
+    
+    local tilt = config.TILT_START
+    while tilt <= config.TILT_END do
+        -- Calculate relative tilt movement needed
+        local tilt_delta = tilt - current_tilt
+        if tilt_delta ~= 0 then
+            log(string.format("Rotating tilt motor by %d degrees (to position %d)...", tilt_delta, tilt))
+            local rotate_success = safe_api_call("RotaryRotate", config.TILT_MOTOR, tilt_delta)
+            if not rotate_success then
+                error(string.format("FAILED to rotate tilt motor by %d degrees (to position %d). Stopping script.", tilt_delta, tilt))
+            end
+            current_tilt = tilt
+        end
+
+        local angle = config.ANGLE_START
+        -- Reset rotation position for each tilt level
+        if current_angle ~= 0 then
+            local reset_delta = -current_angle
+            log(string.format("Resetting rotation motor by %d degrees...", reset_delta))
+            local reset_success = safe_api_call("RotaryRotate", config.ROTATION_MOTOR, reset_delta)
+            if not reset_success then
+                error(string.format("FAILED to reset rotation motor by %d degrees. Stopping script.", reset_delta))
+            end
+            current_angle = 0
+        end
+        
+        while angle <= config.ANGLE_END do
+            -- Check debug limit
+            if config.DEBUG_MODE and scan_count >= config.DEBUG_SCAN_LIMIT then
+                log(string.format("*** DEBUG LIMIT REACHED (%d scans) - Stopping calibration ***", scan_count))
+                return true
+            end
+            
+            -- Calculate relative rotation movement needed
+            local angle_delta = angle - current_angle
+            if angle_delta ~= 0 then
+                log(string.format("Rotating by %d degrees (to position %d)...", angle_delta, angle))
+                local rotate_success = safe_api_call("RotaryRotate", config.ROTATION_MOTOR, angle_delta)
+                if not rotate_success then
+                    error(string.format("FAILED to rotate by %d degrees (to position %d). Stopping script.", angle_delta, angle))
+                end
+                current_angle = angle
+            end
+
+            local status_msg = string.format("Capturing calibration image at Tilt: %d deg, Angle: %d deg", tilt, angle)
+            log(status_msg)
+
+            -- Capture the calibration image using the new API
+            local capture_success, image_id = safe_api_call("Advance_CaptureCalibrationImage", scanner_name)
+            if not capture_success then
+                log(string.format("NO_PHOTO: Failed at Tilt: %d deg, Angle: %d deg", tilt, angle))
+            else
+                log(string.format("Successfully captured image ID: %s", tostring(image_id)))
+                scan_count = scan_count + 1
+            end
+
+            angle = angle + config.ANGLE_STEP
+        end
+        tilt = tilt + config.TILT_STEP
+    end
+
+    log("All calibration images captured successfully.")
+    return true
+end
+
+-- ===================================================================
+-- SCRIPT EXECUTION AND ERROR HANDLING
+-- ===================================================================
+
+-- Execute main function - any error will stop execution
+local success, err_msg = pcall(main)
+
+if not success then
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    log("FATAL ERROR during calibration process:")
+    log(tostring(err_msg))
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    log("Stopping script execution.")
+    -- Cleanup before stopping
+    cleanup_turntable()
+    error(err_msg) -- Re-throw to stop execution
+end
+
+log("-------------------------------------------------")
+log("Calibration process completed successfully.")
+log("-------------------------------------------------")
+
+-- Cleanup turntable
+cleanup_turntable()
