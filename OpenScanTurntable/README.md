@@ -1,6 +1,6 @@
 # OpenScanTurntable
 
-A modular 3D scanning turntable system based on the [OpenScan Classic](https://openscan-org.github.io/OpenScan-Doc/hardware/OpenScanClassic/) design. This project provides software tools and automation scripts for controlling a 2-axis turntable used in structured light scanning (SLS). The system includes full integration with FlexScan3D through a turntable plugin and automated scanning scripts and calibration.
+A modular 3D scanning turntable system based on the [OpenScan Classic](https://openscan-org.github.io/OpenScan-Doc/hardware/OpenScanClassic/) design. This project provides software tools and automation scripts for controlling a 2-axis turntable used in structured light scanning (SLS). The system includes full integration with FlexScan3D through a turntable plugin and automated scanning and calibration scripts.
 
 ## Overview
 
@@ -67,7 +67,6 @@ Automated scanning and calibration scripts for FlexScan3D software integration. 
 **Features:**
 - Configurable angle ranges and step sizes
 - Automatic turntable reset and error handling
-- Support for mesh generation during or after scanning
 - Integration with FlexScan3D alignment and grouping features
 
 See [`FlexScripts/README.md`](FlexScripts/README.md) for detailed script documentation and parameters.
