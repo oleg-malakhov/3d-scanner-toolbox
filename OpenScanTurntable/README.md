@@ -71,7 +71,7 @@ Automated scanning and calibration scripts for FlexScan3D software integration. 
 
 See [`FlexScripts/README.md`](FlexScripts/README.md) for detailed script documentation and parameters.
 
-### `PluginRotaryREST/`
+### `PluginRotaryREST/` (in root directory)
 
 C# plugin for FlexScan3D that enables REST API-based turntable control. This plugin allows FlexScan3D to communicate with the ControlApp REST server:
 
@@ -85,7 +85,7 @@ C# plugin for FlexScan3D that enables REST API-based turntable control. This plu
 - .NET Framework 4.5.1+
 - Visual Studio 2019+ (for building)
 
-See [`PluginRotaryREST/README.md`](PluginRotaryREST/README.md) for build instructions and API documentation.
+See [`../PluginRotaryREST/README.md`](../PluginRotaryREST/README.md) for build instructions and API documentation.
 
 ## Getting Started
 
@@ -115,7 +115,7 @@ Follow the [OpenScan Classic building guide](https://openscan-org.github.io/Open
 4. Configure serial port and motor settings in the GUI
 
 **Option B: FlexScan3D Integration**
-1. Build and install `PluginRotaryREST` plugin (see plugin README)
+1. Build and install `PluginRotaryREST` plugin (see [`../PluginRotaryREST/README.md`](../PluginRotaryREST/README.md))
 2. Start the ControlApp REST server
 3. Configure plugin settings in FlexScan3D
 4. Use FlexScripts for automated scanning workflows
