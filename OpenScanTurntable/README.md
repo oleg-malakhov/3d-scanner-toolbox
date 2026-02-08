@@ -44,7 +44,7 @@ Python-based control application providing a GUI and REST API for turntable cont
 
 - **GRBL Communication**: Full GRBL protocol implementation for Arduino-based controllers
 - **REST API Server**: HTTP endpoints for remote turntable control (`/status`, `/position`, `/reset`)
-- **Graphical User Interface**: PyQt5-based desktop application for manual control
+- **Graphical User Interface**: Tkinter-based desktop application for manual control
 - **Dual-Axis Support**: Independent control of rotation (X-axis) and tilt (Y-axis)
 - **Configuration Management**: JSON-based settings for motors, speeds, and limits
 
@@ -71,7 +71,7 @@ Automated scanning and calibration scripts for FlexScan3D software integration. 
 
 See [`FlexScripts/README.md`](FlexScripts/README.md) for detailed script documentation and parameters.
 
-### `PluginRotaryREST/` (in root directory)
+### `PluginRotaryREST/`
 
 C# plugin for FlexScan3D that enables REST API-based turntable control. This plugin allows FlexScan3D to communicate with the ControlApp REST server:
 

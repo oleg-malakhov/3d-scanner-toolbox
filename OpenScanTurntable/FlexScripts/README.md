@@ -123,4 +123,4 @@ All scripts share these common characteristics:
 
 ## Algorithm Reference
 
-For mathematical details on the Fibonacci Lattice algorithm used in the Fibonacci scanning script, see `Docs/scanning.md` (if available in the repository).
+For mathematical details on the Fibonacci Lattice algorithm used in the Fibonacci scanning script, see the algorithm implementation and comments in `automated_2axis_turntable_scan_fibonacci.script`.
