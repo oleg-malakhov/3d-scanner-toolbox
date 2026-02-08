@@ -69,5 +69,17 @@ namespace PluginRotaryREST.Properties {
                 this["Rotary_REST_StepsPerDegree"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool Rotary_REST_DisableLogging {
+            get {
+                return ((bool)(this["Rotary_REST_DisableLogging"]));
+            }
+            set {
+                this["Rotary_REST_DisableLogging"] = value;
+            }
+        }
     }
 }
