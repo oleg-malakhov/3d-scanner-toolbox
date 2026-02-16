@@ -41,7 +41,8 @@ class SerialConnection:
             self.disconnect()
         
         if auto_detect and port is None:
-            progress_callback = lambda msg: self.logger.info(f"Auto-detecting: {msg}")
+            print("[GRBL] Auto-detecting GRBL device...")
+            progress_callback = lambda msg: print(f"[GRBL] Auto-detecting: {msg}")
             port = find_grbl_device(
                 baud_rate=self.baud_rate,
                 timeout=self.config.get('serial.auto_detect_timeout', 2.0),
@@ -49,8 +50,10 @@ class SerialConnection:
             )
         
         if port is None:
-            self.logger.error("No GRBL device found")
+            print("[GRBL] No GRBL device found - connection failed")
             return False
+        
+        print(f"[GRBL] Attempting to connect to {port}...")
         
         try:
             self.serial = serial.Serial(
@@ -77,11 +80,11 @@ class SerialConnection:
                 self.logger.error(f"Device on {port} is not GRBL")
                 return False
             
-            self.logger.info(f"Connected to {port}")
+            print(f"[GRBL] Connected to {port}")
             return True
             
         except (serial.SerialException, OSError) as e:
-            self.logger.error(f"Connection error: {e}")
+            print(f"[GRBL] Connection error: {e}")
             if self.serial:
                 try:
                     self.serial.close()

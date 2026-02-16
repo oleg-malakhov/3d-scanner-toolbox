@@ -85,12 +85,66 @@ class SettingsManager:
         except (ValueError, IndexError) as e:
             self.logger.debug(f"Error parsing setting line '{line}': {e}")
     
+    def apply_settings_from_config(self) -> None:
+        """Apply settings from configuration to GRBL after connect and init_commands."""
+        print("[GRBL] Applying settings from configuration to GRBL...")
+        
+        # Get settings from config (use speed from config, fallback to GRBL_MAX_RATE if not set)
+        config_x_max_rate = self.config.get('motors.x_axis.speed', GRBL_MAX_RATE)
+        config_y_max_rate = self.config.get('motors.y_axis.speed', GRBL_MAX_RATE)
+        config_x_accel = self.config.get('motors.x_axis.acceleration', None)
+        config_y_accel = self.config.get('motors.y_axis.acceleration', None)
+        
+        settings_applied = False
+        
+        # Apply X-axis max rate
+        if config_x_max_rate is not None:
+            print(f"[GRBL] Applying $110={config_x_max_rate:.1f} (X-axis max rate)")
+            waiter = self.response_handler.create_response_waiter()
+            if self.command_sender.send_command(f"$110={config_x_max_rate:.1f}", True, waiter):
+                self.grbl_settings['$110'] = config_x_max_rate
+                settings_applied = True
+            time.sleep(0.2)
+        
+        # Apply Y-axis max rate
+        if config_y_max_rate is not None:
+            print(f"[GRBL] Applying $111={config_y_max_rate:.1f} (Y-axis max rate)")
+            waiter = self.response_handler.create_response_waiter()
+            if self.command_sender.send_command(f"$111={config_y_max_rate:.1f}", True, waiter):
+                self.grbl_settings['$111'] = config_y_max_rate
+                settings_applied = True
+            time.sleep(0.2)
+        
+        # Apply X-axis acceleration
+        if config_x_accel is not None:
+            print(f"[GRBL] Applying $120={config_x_accel:.1f} (X-axis acceleration)")
+            waiter = self.response_handler.create_response_waiter()
+            if self.command_sender.send_command(f"$120={config_x_accel:.1f}", True, waiter):
+                self.grbl_settings['$120'] = config_x_accel
+                settings_applied = True
+            time.sleep(0.2)
+        
+        # Apply Y-axis acceleration
+        if config_y_accel is not None:
+            print(f"[GRBL] Applying $121={config_y_accel:.1f} (Y-axis acceleration)")
+            waiter = self.response_handler.create_response_waiter()
+            if self.command_sender.send_command(f"$121={config_y_accel:.1f}", True, waiter):
+                self.grbl_settings['$121'] = config_y_accel
+                settings_applied = True
+            time.sleep(0.2)
+        
+        if settings_applied:
+            print("[GRBL] Settings from configuration applied successfully")
+        else:
+            self.logger.warning("No settings were applied from configuration")
+    
     def _check_and_update_settings(self) -> None:
         """Check if GRBL settings match configuration and update if needed."""
         self.logger.info("Checking GRBL Settings Against Configuration...")
         
-        config_x_max_rate = GRBL_MAX_RATE
-        config_y_max_rate = GRBL_MAX_RATE
+        # Get settings from config (use speed from config, fallback to GRBL_MAX_RATE if not set)
+        config_x_max_rate = self.config.get('motors.x_axis.speed', GRBL_MAX_RATE)
+        config_y_max_rate = self.config.get('motors.y_axis.speed', GRBL_MAX_RATE)
         config_x_accel = self.config.get('motors.x_axis.acceleration', None)
         config_y_accel = self.config.get('motors.y_axis.acceleration', None)
         

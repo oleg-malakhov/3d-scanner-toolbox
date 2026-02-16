@@ -237,12 +237,22 @@ class MainWindow:
     
     def _auto_connect(self) -> None:
         """Auto-connect to GRBL device."""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Auto-connect: Starting connection attempt...")
         self._add_status_message("Auto-detecting GRBL device...")
         self.connect_btn.config(state='disabled')
         self.auto_connect_btn.config(state='disabled')
         
         def connect_thread():
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Auto-connect: Attempting to connect to GRBL device...")
             success = self.grbl_controller.connect(auto_detect=True)
+            if success:
+                logger.info("Auto-connect: Successfully connected to GRBL device")
+            else:
+                logger.warning("Auto-connect: Failed to connect to GRBL device (no device found or connection error)")
             self.root.after(0, lambda: self._on_connection_change(success))
         
         threading.Thread(target=connect_thread, daemon=True).start()

@@ -113,8 +113,12 @@ class GRBLController:
             # Start status polling
             self.status_manager.start()
             
-            # Retrieve and configure settings
+            # Apply settings from config after connect and init_commands
             time.sleep(0.5)  # Give threads time to start
+            self.settings_manager.apply_settings_from_config()
+            
+            # Retrieve and configure settings
+            time.sleep(0.5)  # Give time for settings to be applied
             self.settings_manager.retrieve_settings()
             time.sleep(0.5)  # Give time for settings to be received
             self._configure_grbl_steps()
@@ -149,7 +153,7 @@ class GRBLController:
             'G92': 'Set Work Coordinate Offset',
         }
         
-        self.logger.info("Initializing GRBL...")
+        print("[GRBL] Initializing GRBL...")
         for cmd in init_commands:
             try:
                 explanation = command_explanations.get(cmd, 'Unknown command')

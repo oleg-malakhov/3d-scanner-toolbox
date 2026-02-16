@@ -19,8 +19,8 @@
       "max_angle": 360,
       "min_angle": -360,
       "always_on": false,
-      "speed": 1500,
-      "acceleration": 500.0,
+      "speed": 60000,
+      "acceleration": 3000,
       "gear_ratio": 1.0
     },
     "y_axis": {
@@ -28,9 +28,9 @@
       "microsteps": 8,
       "max_angle": 90,
       "min_angle": -90,
-      "speed": 1500,
+      "speed": 60000,
       "always_on": true,
-      "acceleration": 500.0,
+      "acceleration": 3000,
       "gear_ratio": 5.333
     }
   },
