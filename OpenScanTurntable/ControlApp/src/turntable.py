@@ -4,7 +4,9 @@ import threading
 import time
 from typing import Optional, Tuple, Union, Callable
 from src.grbl import GRBLController
-from src.axis import Axis, AxisConfig
+from src.axis import XAxis, YAxis, AxisConfig, BaseAxis
+from src.grbl.grbl_command_sender_adapter import GRBLCommandSenderAdapter
+from src.grbl.command_builder import GRBLCommandBuilder
 from src.grbl import GRBL_MAX_RATE
 from src.utils.config import Config
 
@@ -73,10 +75,13 @@ class Turntable:
             grbl_steps_per_mm=self.grbl_y_steps_per_mm
         )
         
+        # Create command sender adapter
+        command_sender = GRBLCommandSenderAdapter(grbl_controller)
+        
         # Create axis instances (pass message callback to each)
         self.axes = [
-            Axis('x', grbl_controller, x_config, message_callback=self.message_callback),  # Index 0
-            Axis('y', grbl_controller, y_config, message_callback=self.message_callback)   # Index 1
+            XAxis(command_sender, x_config, message_callback=self.message_callback),  # Index 0
+            YAxis(command_sender, y_config, message_callback=self.message_callback)   # Index 1
         ]
         
         # Position polling thread
@@ -252,18 +257,18 @@ class Turntable:
                 self.message_callback(error_msg)
             return False
         
+        # Normalize angles (shortest path is handled in XAxis._normalize_target_angle())
+        x_normalized = self.axes[0]._normalize_target_angle(x_angle)
+        y_normalized = self.axes[1]._normalize_target_angle(y_angle)
+        
         # Get current positions
         x_current = self.axes[0].current()
         y_current = self.axes[1].current()
         
-        x_degrees = abs(x_angle - x_current)
-        y_degrees = abs(y_angle - y_current)
-        
-        # Handle X-axis wrapping for shortest path
-        if self.axes[0].config.max_angle == 360.0:
-            direct = x_degrees
-            wraparound = 360.0 - direct
-            x_degrees = min(direct, wraparound)
+        # Calculate movement distances (for feedrate calculation)
+        # For X-axis, shortest path is already applied in normalization
+        x_degrees = abs(x_normalized - x_current)
+        y_degrees = abs(y_normalized - y_current)
         
         # Calculate feedrates (always use speed from settings)
         if synchronized:
@@ -277,9 +282,6 @@ class Turntable:
             y_feedrate = self.axes[1]._get_feedrate()
         
         # Convert to steps and GRBL units
-        x_normalized = self.axes[0]._normalize_target_angle(x_angle)
-        y_normalized = self.axes[1]._normalize_target_angle(y_angle)
-        
         x_steps = self.axes[0]._degrees_to_steps(x_normalized)
         y_steps = self.axes[1]._degrees_to_steps(y_normalized)
         
@@ -295,8 +297,10 @@ class Turntable:
             print(f"[Turntable]   ⚠️  Invalid feedrate: {feedrate}, using defaults")
             feedrate = min(int(GRBL_MAX_RATE), int(GRBL_MAX_RATE))
         
-        # Build combined G-code command (always include F parameter)
-        command = f"G0 X{x_units:.3f} Y{y_units:.3f} F{feedrate}"
+        # Build combined G-code command using command builder
+        command = GRBLCommandBuilder.build_combined_move_command(
+            x_units, y_units, feedrate
+        )
         
         # Verify F parameter is in command
         if feedrate is not None and f"F{feedrate}" not in command:
@@ -327,8 +331,8 @@ class Turntable:
         if self.message_callback:
             self.message_callback(info_msg)
         
-        # Send command
-        success = self.grbl_controller.send_command(command, wait_for_ok=True)
+        # Send command using command sender from first axis (both axes share the same sender)
+        success = self.axes[0].command_sender.send_command(command, wait_for_ok=True)
         
         if success:
             success_msg = "[Turntable] ✓ Concurrent movement command sent successfully"
@@ -426,7 +430,8 @@ class Turntable:
         Returns:
             True if any axis is moving, False if all are idle
         """
-        return self.grbl_controller.is_moving()
+        # Use command sender from first axis (both axes share the same sender)
+        return self.axes[0].command_sender.is_moving()
     
     def start_position_polling(self) -> None:
         """Start background position polling thread."""
@@ -460,7 +465,7 @@ class Turntable:
         while self.position_thread_running:
             try:
                 # Only poll if connected
-                if self.grbl_controller.connected:
+                if self.axes[0].command_sender.is_connected():
                     # Get current positions (already updated internally via GRBL callbacks)
                     x_angle = self.axes[0].current()
                     y_angle = self.axes[1].current()

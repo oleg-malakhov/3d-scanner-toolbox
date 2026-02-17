@@ -207,7 +207,7 @@ class CoordinateSystem:
             Maximum feedrate
         """
         # Use hardcoded max rate
-        from src.axis import GRBL_MAX_RATE
+        from src.grbl import GRBL_MAX_RATE
         return int(GRBL_MAX_RATE)
     
     def get_home_position(self) -> Tuple[float, float]:

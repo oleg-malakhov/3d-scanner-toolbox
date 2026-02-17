@@ -1,3 +1,7 @@
 pyserial>=3.5
 flask>=2.3.0
 
+# Testing dependencies (optional, for running tests)
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
