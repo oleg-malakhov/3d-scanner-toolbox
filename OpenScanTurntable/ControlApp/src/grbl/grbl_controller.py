@@ -3,7 +3,7 @@
 import threading
 import time
 import logging
-from typing import Optional, Callable, Dict
+from typing import Optional, Callable, Dict, Any
 
 from src.grbl.constants import MachineState, GRBL_MAX_RATE, POSITION_STABLE_THRESHOLD, POSITION_CHANGE_THRESHOLD
 from src.grbl.state_manager import StateManager
