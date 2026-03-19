@@ -76,7 +76,7 @@ Resets the turntable to its initial position.
    - `Newtonsoft.Json` (v13.0.3) - JSON serialization/deserialization
 
 3. **.NET Framework**:
-   - .NET Framework 4.5.1 or later
+   - .NET Framework 4.5.1 (not newer)
    - System libraries: `System`, `System.Core`, `System.Configuration`, `System.Net.Http`, `System.Xml.Linq`
 
 ## Building the Project

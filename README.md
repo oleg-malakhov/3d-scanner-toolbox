@@ -6,9 +6,10 @@ A collection of tools and utilities for 3D scanning workflows, including marker 
 
 This toolbox provides essential tools for 3D scanning operations:
 
-- **Marker Generation** - Create SVG calibration targets with configurable markers
-- **Turntable Control** - Control Revopoint Dual Axis Turntable via GUI, CLI, or REST API
-- **FlexScan3D Integration** - Plugin for REST API-based turntable control in FlexScan3D
+- **Marker Generation** — Create SVG calibration targets with configurable markers (complex markers for FlexScan3D or simple single-ring markers)
+- **Revopoint Turntable** — Control the Revopoint Dual Axis Turntable via BLE; includes GUI, CLI, and REST API
+- **OpenScan Turntable** — GRBL-based 2-axis turntable (OpenScan Classic design): Python ControlApp with GUI and REST API, plus FlexScan3D automation scripts (calibration and scanning)
+- **FlexScan3D Integration** — PluginRotaryREST plugin for REST-based turntable control in FlexScan3D; works with both Revopoint (REST server) and OpenScan ControlApp
 
 ## Components
 
@@ -111,7 +112,7 @@ cd PluginRotaryREST
 
 ### PluginRotaryREST
 - FlexScan3D 3.5 or later
-- .NET Framework 4.5.1+
+- .NET Framework 4.5.1 (not newer)
 - Visual Studio 2019+ (for building)
 - See [PluginRotaryREST/README.md](PluginRotaryREST/README.md) for detailed requirements
 

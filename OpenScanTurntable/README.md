@@ -82,7 +82,7 @@ C# plugin for FlexScan3D that enables REST API-based turntable control. This plu
 
 **Requirements:**
 - FlexScan3D 3.5 or later
-- .NET Framework 4.5.1+
+- .NET Framework 4.5.1 (not newer)
 - Visual Studio 2019+ (for building)
 
 See [`../PluginRotaryREST/README.md`](../PluginRotaryREST/README.md) for build instructions and API documentation.
