@@ -95,6 +95,11 @@ class ResponseHandler:
         with self._response_lock:
             if sequence in self.pending_commands:
                 self.pending_commands[sequence]['command'] = command
+
+    def cancel_pending(self, sequence: int) -> None:
+        """Remove a pending command after timeout so late OK responses cannot desync the queue."""
+        with self._response_lock:
+            self.pending_commands.pop(sequence, None)
     
     def process_response(self, line: str) -> Optional[bool]:
         """

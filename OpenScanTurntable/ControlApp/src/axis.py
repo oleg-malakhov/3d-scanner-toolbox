@@ -8,6 +8,9 @@ from src.grbl.command_sender_interface import GRBLCommandSenderInterface
 from src.grbl.command_builder import GRBLCommandBuilder
 from src.grbl.constants import MachineState, GRBL_MAX_RATE
 
+# Skip G92 when MPos already matches the expected alignment (GRBL units).
+WORK_COORD_ALIGNMENT_TOLERANCE = 0.01
+
 
 @dataclass
 class AxisConfig:
@@ -195,6 +198,45 @@ class BaseAxis(ABC):
             offset_units
         )
     
+    def _get_mpos_units(self) -> float:
+        """Read this axis value from the latest GRBL MPos report."""
+        if hasattr(self.command_sender, 'get_current_position'):
+            position = self.command_sender.get_current_position()
+            return position.get(self.position_key, 0.0)
+        return self._steps_to_grbl_units(self._degrees_to_steps(self._current_angle))
+
+    def _align_work_coordinates(self, current_grbl_units: float, axis_name: str) -> bool:
+        """Send G92 when MPos and the software model need resyncing."""
+        mpos_units = self._get_mpos_units()
+        if abs(current_grbl_units - mpos_units) < WORK_COORD_ALIGNMENT_TOLERANCE:
+            self._log(
+                f"[Axis {axis_name}]   Work coordinates already aligned "
+                f"(MPos={mpos_units:.3f}), skipping G92"
+            )
+            return True
+
+        align_cmd = self._build_work_offset_command(current_grbl_units)
+        self._log(f"[Axis {axis_name}]   Aligning work coordinate system: {align_cmd}")
+
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            if self.command_sender.send_command(align_cmd, wait_for_ok=True):
+                return True
+            if attempt < max_retries:
+                self._log(
+                    f"[Axis {axis_name}]   ⚠️  G92 alignment failed "
+                    f"(attempt {attempt}/{max_retries}), retrying..."
+                )
+                time.sleep(0.2)
+
+        self._log(
+            f"[Axis {axis_name}]   ⚠️  G92 alignment command failed after "
+            f"{max_retries} attempts, aborting movement"
+        )
+        if self.command_sender.get_machine_state() == MachineState.ALARM:
+            self._log(f"[Axis {axis_name}]   GRBL is in alarm state - may need manual intervention")
+        return False
+
     # Movement methods (use command sender interface)
     
     def rotate_to(self, degrees: float, feedrate: Optional[int] = None) -> bool:
@@ -222,7 +264,13 @@ class BaseAxis(ABC):
             self._log(f"[Axis {axis_name}] ✗ Invalid angle: {error_msg}")
             return False
         
-        # 3. CHECK STATE: Check if GRBL is in a valid state to accept commands
+        # 3. CHECK STATE: Wait for any in-flight move and ensure GRBL can accept commands
+        if self.command_sender.is_moving():
+            self._log(f"[Axis {axis_name}]   Waiting for current movement to finish...")
+            if not self.command_sender.wait_for_idle():
+                self._log(f"[Axis {axis_name}]   ✗ Timed out waiting for idle, aborting movement")
+                return False
+
         if self.command_sender.get_machine_state() == MachineState.ALARM:
             self._log(f"[Axis {axis_name}]   ⚠️  GRBL is in alarm state, attempting to unlock...")
             if not self.command_sender.unlock():
@@ -241,30 +289,12 @@ class BaseAxis(ABC):
         
         # 5. CALCULATION: Ensure work coordinate system is aligned
         current_grbl_units = self._steps_to_grbl_units(self._degrees_to_steps(current_angle))
-        
-        # 6. COMMAND BUILDING: Build alignment command
-        align_cmd = self._build_work_offset_command(current_grbl_units)
-        self._log(f"[Axis {axis_name}]   Aligning work coordinate system: {align_cmd}")
-        
-        # 7. COMMAND SENDING: Retry G92 command if it fails
-        align_success = False
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            align_success = self.command_sender.send_command(align_cmd, wait_for_ok=True)
-            if align_success:
-                break
-            if attempt < max_retries:
-                self._log(f"[Axis {axis_name}]   ⚠️  G92 alignment failed (attempt {attempt}/{max_retries}), retrying...")
-                time.sleep(0.2)  # Brief delay before retry
-        
-        if not align_success:
-            self._log(f"[Axis {axis_name}]   ⚠️  G92 alignment command failed after {max_retries} attempts, aborting movement")
-            # Check if GRBL is in alarm state
-            if self.command_sender.get_machine_state() == MachineState.ALARM:
-                self._log(f"[Axis {axis_name}]   GRBL is in alarm state - may need manual intervention")
+
+        # 6. COMMAND SENDING: Align work coordinates when needed
+        if not self._align_work_coordinates(current_grbl_units, axis_name):
             return False
-        
-        # 8. CALCULATION: Convert target to steps and GRBL units
+
+        # 7. CALCULATION: Convert target to steps and GRBL units
         grbl_steps_per_mm = self.grbl_steps_per_mm
         if abs(grbl_steps_per_mm - 1.0) > 0.01:
             self._log(

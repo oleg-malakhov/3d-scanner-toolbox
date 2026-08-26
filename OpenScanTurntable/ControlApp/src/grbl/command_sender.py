@@ -100,8 +100,10 @@ class CommandSender:
                                 self.logger.warning("Command error response")
                                 return False
                         else:
-                            # Timeout
+                            # Timeout — drop the waiter so a late OK cannot match a later command.
                             self.logger.warning("Timeout waiting for response")
+                            if self.response_handler:
+                                self.response_handler.cancel_pending(response_waiter.sequence)
                             return False
                     
                     # Command sent without waiting for response
