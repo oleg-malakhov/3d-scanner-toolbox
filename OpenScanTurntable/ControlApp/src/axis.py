@@ -11,6 +11,7 @@ from src.grbl.constants import (
     GRBL_MAX_RATE,
     MIN_MOVEMENT_TIMEOUT,
     MOVEMENT_TIMEOUT_BUFFER,
+    POSITION_AT_TARGET_TOLERANCE,
 )
 
 # Skip G92 when MPos already matches the expected alignment (GRBL units).
@@ -364,8 +365,15 @@ class BaseAxis(ABC):
         # Allow GRBL time to accept the line and enter Run before we wait.
         time.sleep(0.1)
         if not self.command_sender.wait_for_idle(timeout=move_timeout):
-            self._log(f"[Axis {axis_name}]   ✗ Timed out waiting for movement to finish")
-            return False
+            angle_error = abs(self.current() - normalized_degrees)
+            if angle_error <= POSITION_AT_TARGET_TOLERANCE:
+                self._log(
+                    f"[Axis {axis_name}]   ⚠️  Wait timed out but target reached "
+                    f"({self.current():.1f}° vs {normalized_degrees:.1f}°)"
+                )
+            else:
+                self._log(f"[Axis {axis_name}]   ✗ Timed out waiting for movement to finish")
+                return False
 
         if self.command_sender.get_machine_state() == MachineState.ALARM:
             self._log(f"[Axis {axis_name}]   ✗ GRBL entered alarm state after movement")

@@ -15,7 +15,8 @@ RESPONSE_TIMEOUT = 30.0  # Wait for GRBL ok (long moves can delay serial respons
 MAX_CONSECUTIVE_ERRORS = 10  # Max errors before stopping status polling
 STATUS_POLL_LOCK_TIMEOUT = 0.01  # 10ms timeout for status poll lock
 MIN_MOVEMENT_TIMEOUT = 15.0  # Minimum wait for move completion
-MOVEMENT_TIMEOUT_BUFFER = 10.0  # Extra seconds added to estimated move time
+MOVEMENT_TIMEOUT_BUFFER = 20.0  # Extra seconds added to estimated move time
+POSITION_AT_TARGET_TOLERANCE = 1.0  # degrees — for completion fallback
 
 # Movement Detection
 POSITION_STABLE_THRESHOLD = 5  # Number of checks for position stability

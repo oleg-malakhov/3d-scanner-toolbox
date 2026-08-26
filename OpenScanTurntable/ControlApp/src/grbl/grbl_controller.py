@@ -414,6 +414,9 @@ class GRBLController:
         last_log_time = time.time()
         
         while time.time() - start_time < timeout:
+            # Request fresh status; background polling alone can miss state on slow serial links.
+            self.query_status()
+
             current_state = self.state_manager.machine_state
             current_position = self.state_manager.current_position
             
@@ -426,10 +429,12 @@ class GRBLController:
                 last_position = current_position
             else:
                 position_stable_count += 1
-                # If position stable and IDLE, movement complete
-                if position_stable_count >= POSITION_STABLE_THRESHOLD and current_state == MachineState.IDLE:
+                if position_stable_count >= POSITION_STABLE_THRESHOLD:
                     elapsed = time.time() - start_time
-                    self.logger.debug(f"Movement completed (position stable + IDLE) in {elapsed:.2f}s")
+                    self.logger.debug(
+                        f"Movement completed (position stable) in {elapsed:.2f}s "
+                        f"(state: {current_state.value})"
+                    )
                     return True
             
             # Check machine state
