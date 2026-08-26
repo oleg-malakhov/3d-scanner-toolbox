@@ -15,7 +15,7 @@
   "motors": {
     "x_axis": {
       "step_angle": 1.8,
-      "microsteps": 8,
+      "microsteps": 32,
       "max_angle": 360,
       "min_angle": -360,
       "always_on": false,
@@ -25,7 +25,7 @@
     },
     "y_axis": {
       "step_angle": 1.8,
-      "microsteps": 8,
+      "microsteps": 32,
       "max_angle": 90,
       "min_angle": -90,
       "speed": 60000,
