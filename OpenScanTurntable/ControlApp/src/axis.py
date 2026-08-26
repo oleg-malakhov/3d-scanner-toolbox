@@ -265,9 +265,16 @@ class BaseAxis(ABC):
             return False
         
         # 8. CALCULATION: Convert target to steps and GRBL units
+        grbl_steps_per_mm = self.grbl_steps_per_mm
+        if abs(grbl_steps_per_mm - 1.0) > 0.01:
+            self._log(
+                f"[Axis {axis_name}]   ✗ GRBL $100/$101 is {grbl_steps_per_mm:.3f}, "
+                "expected 1.0 for direct step control. Reconnect to resync settings."
+            )
+            return False
+
         target_steps = self._degrees_to_steps(normalized_degrees)
         target_units = self._steps_to_grbl_units(target_steps)
-        grbl_steps_per_mm = self.grbl_steps_per_mm
         
         # 9. CALCULATION: Calculate feedrate
         if feedrate is None:

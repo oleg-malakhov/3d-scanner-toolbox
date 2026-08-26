@@ -138,6 +138,7 @@ class GRBLController:
         self.serial_connection.disconnect()
         self.state_manager.connected = False
         self.response_handler.clear_pending()
+        self.settings_manager.reset_direct_step_control_lock()
     
     def _initialize_grbl(self) -> None:
         """Send initialization commands to GRBL."""
@@ -197,35 +198,43 @@ class GRBLController:
         """Configure GRBL steps/mm settings for direct step control."""
         self.logger.info("Auto-configuring GRBL for direct step control...")
         time.sleep(0.3)
-        
-        success = True
+
+        target = SettingsManager.DIRECT_STEP_CONTROL_VALUE
+        x_ok = False
+        y_ok = False
+
         try:
-            self.logger.debug("Setting $100=1.0 (X-axis: 1 step per unit)")
-            if not self.send_command("$100=1.0", wait_for_ok=True):
+            self.logger.debug(f"Setting $100={target} (X-axis: 1 step per unit)")
+            x_ok = self.send_command(f"$100={target}", wait_for_ok=True)
+            if not x_ok:
                 self.logger.warning("Failed to set $100")
-                success = False
             time.sleep(0.3)
-            
-            self.logger.debug("Setting $101=1.0 (Y-axis: 1 step per unit)")
-            if not self.send_command("$101=1.0", wait_for_ok=True):
+
+            self.logger.debug(f"Setting $101={target} (Y-axis: 1 step per unit)")
+            y_ok = self.send_command(f"$101={target}", wait_for_ok=True)
+            if not y_ok:
                 self.logger.warning("Failed to set $101")
-                success = False
             time.sleep(0.3)
-            
-            # Verify settings
-            self.logger.debug("Verifying settings...")
-            time.sleep(0.3)
-            self.send_command("$100", wait_for_ok=False)
-            time.sleep(0.3)
-            self.send_command("$101", wait_for_ok=False)
-            time.sleep(0.3)
-            self.send_command("$", wait_for_ok=False)
-            time.sleep(0.8)
-            
-            if success:
-                self.logger.info("GRBL configured for direct step control")
+
+            if x_ok and y_ok:
+                # GRBL EEPROM is updated; sync app memory immediately. retrieve_settings()
+                # may have loaded legacy values (e.g. $100=80) that must not be reused.
+                self.settings_manager.set_steps_per_unit(target, target)
+                self.logger.info(
+                    f"GRBL configured for direct step control ($100=$101={target})"
+                )
             else:
-                self.logger.warning("Some settings may not have been applied")
+                self.logger.warning(
+                    "Could not apply $100/$101 on GRBL; movement scaling may be wrong"
+                )
+
+            if not self.settings_manager.ensure_direct_step_control():
+                self.logger.error(
+                    "GRBL step scaling mismatch: app expects $100=$101=1.0 but has "
+                    f"$100={self.settings_manager.grbl_x_steps_per_mm}, "
+                    f"$101={self.settings_manager.grbl_y_steps_per_mm}. "
+                    "Reconnect or fix GRBL settings before moving."
+                )
         except Exception as e:
             self.logger.error(f"Error configuring GRBL: {e}")
     

@@ -33,7 +33,36 @@ class SettingsManager:
         
         self.grbl_x_steps_per_mm = 1.0
         self.grbl_y_steps_per_mm = 1.0
-    
+        self._direct_step_control_locked = False
+
+    # App uses $100=$101=1.0 so G-code units equal motor steps.
+    DIRECT_STEP_CONTROL_VALUE = 1.0
+
+    def set_steps_per_unit(self, x: float, y: float) -> None:
+        """Sync in-memory $100/$101 with GRBL after explicit configuration."""
+        self.grbl_x_steps_per_mm = x
+        self.grbl_y_steps_per_mm = y
+        self.grbl_settings['$100'] = x
+        self.grbl_settings['$101'] = y
+        self._direct_step_control_locked = True
+
+    def reset_direct_step_control_lock(self) -> None:
+        """Allow EEPROM $100/$101 to be read again on next connect."""
+        self._direct_step_control_locked = False
+
+    def ensure_direct_step_control(self) -> bool:
+        """
+        Verify in-memory $100/$101 match direct step control mode.
+
+        Returns:
+            True if both axes use 1.0 step/unit
+        """
+        expected = self.DIRECT_STEP_CONTROL_VALUE
+        return (
+            abs(self.grbl_x_steps_per_mm - expected) < 0.01
+            and abs(self.grbl_y_steps_per_mm - expected) < 0.01
+        )
+
     def retrieve_settings(self) -> None:
         """Retrieve all GRBL settings."""
         self.logger.info("Retrieving GRBL Settings...")
@@ -75,9 +104,11 @@ class SettingsManager:
                 
                 # Update steps/mm if this is $100 or $101
                 if setting_code == '100':
-                    self.grbl_x_steps_per_mm = value
+                    if not self._direct_step_control_locked:
+                        self.grbl_x_steps_per_mm = value
                 elif setting_code == '101':
-                    self.grbl_y_steps_per_mm = value
+                    if not self._direct_step_control_locked:
+                        self.grbl_y_steps_per_mm = value
                 
                 # Signal that we've received at least one setting
                 if not self.settings_received.is_set():
