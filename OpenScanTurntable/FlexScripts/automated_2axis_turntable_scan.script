@@ -1,0 +1,317 @@
+-- ===================================================================
+-- Automated 2-Axis Turntable Scanning Script for FlexScan3D
+-- Supports full 360° rotation and -90° to +90° tilt
+-- ===================================================================
+
+-- ===================================================================
+-- CONFIGURATION CONSTANTS
+-- ===================================================================
+
+-- Rotation parameters
+ROTATION_START = 0
+ROTATION_END = 360
+ROTATION_STEP = 30  -- degrees per step
+
+-- Tilt parameters
+TILT_START = -75
+TILT_END = 75
+TILT_STEP = 15  -- degrees per step
+
+-- Motor assignments
+ROTATION_MOTOR = 1
+TILT_MOTOR = 2
+
+-- Scanning options
+STABILIZATION_DELAY = 0  -- seconds to wait after movement
+
+-- Post-processing options
+ALIGN_ENABLED = false  -- Set to true to align scans after completion
+GROUP_ENABLED = false  -- Set to true to combine/group scans after completion
+MESH_GENERATION_MODE = "after"  -- "during" or "after"
+-- "during": Generate mesh immediately after each scan
+-- "after": Generate all meshes after all scans are completed
+
+-- ===================================================================
+-- HELPER FUNCTIONS
+-- ===================================================================
+
+--- A safe logging function that uses DisplayString or PrintValue.
+-- @param message The message to log.
+local function log(message)
+    if DisplayString then
+        DisplayString(message)
+    elseif PrintValue then
+        PrintValue(message)
+    else
+        print(message) -- Fallback to basic print
+    end
+end
+
+--- Safely calls a function from the FlexScan3D API, checking for its existence first.
+-- @param func_name The name of the global API function to call.
+-- @param ... Any arguments to pass to the API function.
+local function safe_api_call(func_name, ...)
+    if _G[func_name] == nil then
+        error("FlexScan3D API function '" .. func_name .. "' is not available. Ensure the script is run from within the FlexScan3D application environment.")
+    end
+    return _G[func_name](...)
+end
+
+--- Resets the turntable to its zero position.
+local function reset_turntable()
+    log("Resetting turntable to zero position...")
+    safe_api_call("RotaryReset")
+    Wait(0.5)  -- Brief wait after reset
+    log("Turntable reset complete.")
+end
+
+--- Moves a motor to a target angle using relative positioning.
+-- @param motor The motor index (1 or 2)
+-- @param target_angle The target angle in degrees
+-- @param current_angle The current angle position
+-- @return The new current angle
+local function move_motor_to_angle(motor, target_angle, current_angle)
+    local delta = target_angle - current_angle
+    if math.abs(delta) > 0.1 then  -- Only move if difference is significant
+        log(string.format("Moving motor %d by %.1f degrees (from %.1f to %.1f)...", motor, delta, current_angle, target_angle))
+        local success = safe_api_call("RotaryRotate", motor, delta)
+        if success then
+            Wait(STABILIZATION_DELAY)
+            return target_angle
+        else
+            error(string.format("Failed to move motor %d to angle %.1f", motor, target_angle))
+        end
+    end
+    return current_angle
+end
+
+--- Calculates the total number of scans that will be performed.
+-- @return Total number of scans
+local function calculate_total_scans()
+    local rotation_count = math.floor((ROTATION_END - ROTATION_START) / ROTATION_STEP) + 1
+    local tilt_count = math.floor((TILT_END - TILT_START) / TILT_STEP) + 1
+    return rotation_count * tilt_count
+end
+
+-- ===================================================================
+-- MAIN SCANNING LOGIC
+-- ===================================================================
+
+--- The main function containing the core scanning logic.
+-- @return true if successful, otherwise throws an error.
+local function main()
+    log("==========================================================")
+    log("Starting automated 2-axis turntable scanning process...")
+    log("==========================================================")
+
+    -- 1. Check Rotary Connection
+    log("Checking rotary table connection...")
+    local rotary_connected = safe_api_call("IsRotaryConnected")
+    if not rotary_connected then
+        error("Rotary table is not connected. Please ensure the turntable is connected and configured.")
+    end
+    log("Rotary table connected successfully.")
+
+    -- 2. Verify Motor Count
+    local num_motors_ok, num_motors = safe_api_call("GetNumMotors")
+    if not num_motors_ok or num_motors < 2 then
+        error(string.format("Insufficient motors available. Expected at least 2, got %d.", num_motors or 0))
+    end
+    log(string.format("Rotary table has %d motor(s) available.", num_motors))
+
+    -- 3. Initialize Scanner
+    log("Attempting to get the first available scanner (index 0)...")
+    local scanner_name = safe_api_call("GetScannerNameFromIndex", 0)
+    if scanner_name == nil then
+        error("Could not find a scanner at index 0. Please ensure a scanner is connected and configured.")
+    end
+    log("Using scanner: " .. scanner_name)
+
+    -- 4. Connect Scanner
+    log("Connecting scanner...")
+    local connect_success = safe_api_call("ScannerConnect")
+    if not connect_success then
+        error("Failed to connect scanner. Please check scanner connection and configuration.")
+    end
+    log("Scanner connected successfully.")
+
+    -- 5. Verify Scanner Connection
+    local is_connected = safe_api_call("IsScannerConnected", scanner_name)
+    if not is_connected then
+        error("Scanner connection verification failed.")
+    end
+
+    -- 6. Initial Turntable Reset
+    reset_turntable()
+
+    -- 7. Calculate Total Scans
+    local total_scans = calculate_total_scans()
+    log(string.format("Scan plan: %d total scans will be performed.", total_scans))
+    log(string.format("Rotation: %d to %d degrees (step: %d)", ROTATION_START, ROTATION_END, ROTATION_STEP))
+    log(string.format("Tilt: %d to %d degrees (step: %d)", TILT_START, TILT_END, TILT_STEP))
+    log(string.format("Mesh generation mode: %s", MESH_GENERATION_MODE))
+    log("----------------------------------------------------------")
+
+    -- 8. Initialize Scan Collection
+    local all_group_ids = NewListString()
+    local scan_count = 0
+    local failed_scans = 0
+
+    -- 9. Track current positions for relative movements
+    local current_tilt = 0
+    local current_rotation = 0
+
+    -- 10. Main Scanning Loop
+    local tilt = TILT_START
+    while tilt <= TILT_END do
+        -- Move tilt motor to target angle
+        current_tilt = move_motor_to_angle(TILT_MOTOR, tilt, current_tilt)
+
+        -- Reset rotation position for each new tilt level
+        if current_rotation ~= ROTATION_START then
+            current_rotation = move_motor_to_angle(ROTATION_MOTOR, ROTATION_START, current_rotation)
+        end
+
+        local rotation = ROTATION_START
+        while rotation <= ROTATION_END do
+            -- Move rotation motor to target angle
+            current_rotation = move_motor_to_angle(ROTATION_MOTOR, rotation, current_rotation)
+
+            -- Display progress
+            scan_count = scan_count + 1
+            local progress_pct = (scan_count / total_scans) * 100
+            local status_msg = string.format("Scan %d/%d (%.1f%%) - Tilt: %.1f°, Rotation: %.1f°", 
+                scan_count, total_scans, progress_pct, tilt, rotation)
+            log(status_msg)
+
+            -- Perform scan
+            -- Scan() returns: success (bool), list of group IDs
+            local scan_success, scan_groups = safe_api_call("Scan")
+            
+            if scan_success then
+                -- scan_groups is a list (NewListString object or table)
+                if scan_groups then
+                    local group_list = NewListString()
+                    local has_groups = false
+                    
+                    -- Try to iterate if it's a list-like object
+                    if type(scan_groups) == "table" then
+                        for i = 1, #scan_groups do
+                            local group_id = tostring(scan_groups[i])
+                            all_group_ids:Add(group_id)
+                            group_list:Add(group_id)
+                            log(string.format("  -> Scan group ID: %s", group_id))
+                            has_groups = true
+                        end
+                    elseif scan_groups then
+                        -- Might be a single value or NewListString object
+                        local group_id = tostring(scan_groups)
+                        all_group_ids:Add(group_id)
+                        group_list:Add(group_id)
+                        log(string.format("  -> Scan group ID: %s", group_id))
+                        has_groups = true
+                    end
+                    
+                    if has_groups then
+                        -- Generate mesh during scan if mode is "during"
+                        if MESH_GENERATION_MODE == "during" then
+                            log("  -> Generating mesh for current scan...")
+                            local process_success = safe_api_call("ProcessGroups", group_list, 0)
+                            if process_success then
+                                log("  -> Mesh generation completed.")
+                            else
+                                log("  -> WARNING: Mesh generation failed for this scan.")
+                            end
+                        end
+                    else
+                        log("  -> WARNING: Scan completed but no group IDs returned.")
+                        failed_scans = failed_scans + 1
+                    end
+                else
+                    log("  -> WARNING: Scan completed but no group IDs returned.")
+                    failed_scans = failed_scans + 1
+                end
+            else
+                log(string.format("  -> ERROR: Scan failed at Tilt: %.1f°, Rotation: %.1f°", tilt, rotation))
+                failed_scans = failed_scans + 1
+            end
+
+            -- Increment rotation angle
+            rotation = rotation + ROTATION_STEP
+        end
+
+        -- Increment tilt angle
+        tilt = tilt + TILT_STEP
+    end
+
+    log("----------------------------------------------------------")
+    log(string.format("Scanning completed: %d successful, %d failed", scan_count - failed_scans, failed_scans))
+
+    -- 11. Post-Processing: Mesh Generation (if mode is "after")
+    if MESH_GENERATION_MODE == "after" and all_group_ids and #all_group_ids > 0 then
+        log("----------------------------------------------------------")
+        log("Generating meshes for all scans...")
+        local process_success = safe_api_call("ProcessGroups", all_group_ids, 0)
+        if process_success then
+            log("Mesh generation completed for all scans.")
+        else
+            log("WARNING: Mesh generation failed for some scans.")
+        end
+    end
+
+    -- 12. Post-Processing: Alignment (if enabled)
+    if ALIGN_ENABLED and all_group_ids and #all_group_ids > 0 then
+        log("----------------------------------------------------------")
+        log("Aligning all scans...")
+        -- First, load all groups
+        for i = 1, #all_group_ids do
+            safe_api_call("LoadGroup", all_group_ids[i])
+        end
+        -- Then align
+        local align_success = safe_api_call("Align")
+        if align_success then
+            log("Alignment completed successfully.")
+        else
+            log("WARNING: Alignment failed.")
+        end
+    end
+
+    -- 13. Post-Processing: Grouping/Combining (if enabled)
+    if GROUP_ENABLED and all_group_ids and #all_group_ids > 0 then
+        log("----------------------------------------------------------")
+        log("Combining all scans into a single group...")
+        local combine_success, combined_group_id = safe_api_call("Combine", all_group_ids)
+        if combine_success then
+            log(string.format("Combining completed. Combined group ID: %s", tostring(combined_group_id)))
+        else
+            log("WARNING: Combining failed.")
+        end
+    end
+
+    log("==========================================================")
+    log("Scanning process completed successfully.")
+    log("==========================================================")
+    return true
+end
+
+-- ===================================================================
+-- SCRIPT EXECUTION AND ERROR HANDLING
+-- ===================================================================
+
+local success, err_msg = pcall(main)
+
+if success then
+    log("----------------------------------------------------------")
+    log("Script execution completed successfully.")
+    log("----------------------------------------------------------")
+else
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    log("FATAL ERROR during script execution:")
+    log(tostring(err_msg))
+    log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+end
+
+-- Cleanup: Reset turntable to home position
+reset_turntable()
+
+log("Script finished.")

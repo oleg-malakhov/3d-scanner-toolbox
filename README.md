@@ -6,8 +6,10 @@ A collection of tools and utilities for 3D scanning workflows, including marker 
 
 This toolbox provides essential tools for 3D scanning operations:
 
-- **Marker Generation** - Create SVG calibration targets with configurable markers
-- **Turntable Control** - Control Revopoint Dual Axis Turntable via GUI, CLI, or REST API
+- **Marker Generation** — Create SVG calibration targets with configurable markers (complex markers for FlexScan3D or simple single-ring markers)
+- **Revopoint Turntable** — Control the Revopoint Dual Axis Turntable via BLE; includes GUI, CLI, and REST API
+- **OpenScan Turntable** — GRBL-based 2-axis turntable (OpenScan Classic design): Python ControlApp with GUI and REST API, plus FlexScan3D automation scripts (calibration and scanning)
+- **FlexScan3D Integration** — PluginRotaryREST plugin for REST-based turntable control in FlexScan3D; works with both Revopoint (REST server) and OpenScan ControlApp
 
 ## Components
 
@@ -49,6 +51,26 @@ python turntable_gui.py
 
 📖 [Full Documentation →](RevopointTurntable/README.md)
 
+### 🔌 PluginRotaryREST
+
+A FlexScan3D plugin that enables REST API-based turntable control. This C# plugin allows FlexScan3D to communicate with turntable hardware through HTTP REST endpoints, enabling seamless integration with turntable control servers.
+
+**Features:**
+- FlexScan3D integration via PluginRotary interface
+- REST API client for HTTP-based turntable communication
+- Dual motor support (rotation and tilt control)
+- Real-time status monitoring and connection management
+- Configurable server URL and settings
+
+**Quick Start:**
+```bash
+cd PluginRotaryREST
+# Open PluginRotaryREST.slnx in Visual Studio
+# Build the solution and copy DLL to FlexScan3D plugins directory
+```
+
+📖 [Full Documentation →](PluginRotaryREST/README.md)
+
 ## Project Structure
 
 ```
@@ -65,6 +87,16 @@ python turntable_gui.py
 │   ├── README.md               # Turntable documentation
 │   └── requirements.txt        # Python dependencies
 │
+├── OpenScanTurntable/          # OpenScan turntable system
+│   ├── ControlApp/             # Python control application
+│   ├── FlexScripts/            # FlexScan3D automation scripts
+│   └── README.md               # OpenScan documentation
+│
+├── PluginRotaryREST/           # FlexScan3D REST API plugin
+│   ├── PluginRotaryREST.cs     # Main plugin implementation
+│   ├── PluginRotaryREST.csproj # C# project file
+│   └── README.md               # Plugin documentation
+│
 └── README.md                   # This file
 ```
 
@@ -78,6 +110,12 @@ python turntable_gui.py
 - Bluetooth adapter with BLE support
 - See [RevopointTurntable/requirements.txt](RevopointTurntable/requirements.txt) for Python packages
 
+### PluginRotaryREST
+- FlexScan3D 3.5 or later
+- .NET Framework 4.5.1 (not newer)
+- Visual Studio 2019+ (for building)
+- See [PluginRotaryREST/README.md](PluginRotaryREST/README.md) for detailed requirements
+
 ## Installation
 
 ### Markers
@@ -88,6 +126,14 @@ No installation required - just Python 3.x!
 cd RevopointTurntable
 pip install -r requirements.txt
 ```
+
+### PluginRotaryREST
+1. Open `PluginRotaryREST.slnx` in Visual Studio
+2. Restore NuGet packages
+3. Build the solution
+4. Copy `PluginRotaryREST.dll` and `PluginRotaryREST.dll.config` to FlexScan3D plugins directory
+
+See [PluginRotaryREST/README.md](PluginRotaryREST/README.md) for detailed installation instructions.
 
 ## Usage Examples
 
@@ -146,10 +192,12 @@ print(f"Angle: {status['angle']}, Tilt: {status['tilt']}")
 ## Compatibility
 
 - **Markers**: Compatible with FlexScan3D and other 3D scanning software that uses checkerboard/marker patterns
-- **Turntable**: Designed for Revopoint Dual Axis Turntable (device name: `REVO_DUAL_AXIS_TABLE`)
+- **Revopoint Turntable**: Designed for Revopoint Dual Axis Turntable (device name: `REVO_DUAL_AXIS_TABLE`)
+- **PluginRotaryREST**: Compatible with FlexScan3D 3.5+ and any turntable server implementing the REST API protocol
 - **Platforms**: 
   - Markers: Cross-platform (any OS with Python 3.x)
-  - Turntable: Windows, macOS, Linux (requires BLE support)
+  - Revopoint Turntable: Windows, macOS, Linux (requires BLE support)
+  - PluginRotaryREST: Windows (FlexScan3D requirement)
 
 ## Contributing
 
