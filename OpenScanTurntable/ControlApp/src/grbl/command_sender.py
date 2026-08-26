@@ -85,7 +85,7 @@ class CommandSender:
                     
                     # Wait for response if needed
                     if wait_for_response and response_waiter:
-                        self.logger.debug("Waiting for OK response (timeout: 5s)...")
+                        self.logger.debug("Waiting for OK response (timeout: {:.0f}s)...".format(RESPONSE_TIMEOUT))
                         if response_waiter.wait(timeout=RESPONSE_TIMEOUT):
                             # Response received
                             result = response_waiter.get_result()

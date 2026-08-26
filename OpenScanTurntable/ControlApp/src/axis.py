@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import Tuple, Optional, Callable, Dict
 from src.grbl.command_sender_interface import GRBLCommandSenderInterface
 from src.grbl.command_builder import GRBLCommandBuilder
-from src.grbl.constants import MachineState, GRBL_MAX_RATE
+from src.grbl.constants import (
+    MachineState,
+    GRBL_MAX_RATE,
+    MIN_MOVEMENT_TIMEOUT,
+    MOVEMENT_TIMEOUT_BUFFER,
+)
 
 # Skip G92 when MPos already matches the expected alignment (GRBL units).
 WORK_COORD_ALIGNMENT_TOLERANCE = 0.01
@@ -333,14 +338,28 @@ class BaseAxis(ABC):
             self._log(f"[Axis {axis_name}]   ⚠️  WARNING: F parameter missing from command!")
             return False
         
-        # 12. COMMAND SENDING: Send command
-        success = self.command_sender.send_command(command, wait_for_ok=True)
-        if success:
-            self._log(f"[Axis {axis_name}]   ✓ Command sent successfully")
-        else:
-            self._log(f"[Axis {axis_name}]   ✗ Command failed")
-        
-        return success
+        # 12. COMMAND SENDING: Send command and wait for move to finish
+        move_timeout = max(
+            MIN_MOVEMENT_TIMEOUT,
+            self.estimate_movement_time(current_angle, normalized_degrees) + MOVEMENT_TIMEOUT_BUFFER,
+        )
+        sent = self.command_sender.send_command(command, wait_for_ok=True)
+        if not sent:
+            self._log(f"[Axis {axis_name}]   ✗ Command failed or timed out waiting for ok")
+            if not self.command_sender.is_moving():
+                return False
+            self._log(f"[Axis {axis_name}]   Movement started despite missing ok, waiting for completion...")
+
+        if not self.command_sender.wait_for_idle(timeout=move_timeout):
+            self._log(f"[Axis {axis_name}]   ✗ Timed out waiting for movement to finish")
+            return False
+
+        if self.command_sender.get_machine_state() == MachineState.ALARM:
+            self._log(f"[Axis {axis_name}]   ✗ GRBL entered alarm state after movement")
+            return False
+
+        self._log(f"[Axis {axis_name}]   ✓ Movement completed")
+        return True
     
     def rotate_on(self, degrees: float) -> bool:
         """

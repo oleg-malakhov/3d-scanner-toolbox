@@ -11,9 +11,11 @@ RX_BUFFER_SIZE = 128  # GRBL's default receive buffer size
 AVG_COMMAND_SIZE = 20  # Average command size for buffer accounting
 
 # Timeouts
-RESPONSE_TIMEOUT = 5.0  # Timeout for waiting for OK response
+RESPONSE_TIMEOUT = 30.0  # Wait for GRBL ok (long moves can delay serial responses)
 MAX_CONSECUTIVE_ERRORS = 10  # Max errors before stopping status polling
 STATUS_POLL_LOCK_TIMEOUT = 0.01  # 10ms timeout for status poll lock
+MIN_MOVEMENT_TIMEOUT = 15.0  # Minimum wait for move completion
+MOVEMENT_TIMEOUT_BUFFER = 10.0  # Extra seconds added to estimated move time
 
 # Movement Detection
 POSITION_STABLE_THRESHOLD = 5  # Number of checks for position stability
