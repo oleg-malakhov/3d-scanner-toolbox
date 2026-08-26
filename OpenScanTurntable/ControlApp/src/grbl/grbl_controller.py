@@ -460,6 +460,14 @@ class GRBLController:
     def is_moving(self) -> bool:
         """Check if machine is currently moving."""
         return self.state_manager.machine_state in (MachineState.RUN, MachineState.JOG, MachineState.HOLD)
+
+    def pause_status_polling(self) -> None:
+        """Pause background ? polling during sensitive serial operations."""
+        self.status_manager.pause_polling()
+
+    def resume_status_polling(self) -> None:
+        """Resume background ? polling."""
+        self.status_manager.resume_polling()
     
     def query_status(self, bypass_lock: bool = False) -> Optional[Dict[str, Any]]:
         """

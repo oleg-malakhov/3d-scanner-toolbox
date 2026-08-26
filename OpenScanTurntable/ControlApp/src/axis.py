@@ -338,18 +338,31 @@ class BaseAxis(ABC):
             self._log(f"[Axis {axis_name}]   ⚠️  WARNING: F parameter missing from command!")
             return False
         
-        # 12. COMMAND SENDING: Send command and wait for move to finish
+        # 12. COMMAND SENDING: Send motion command and wait for completion.
+        # Do not block on GRBL "ok" for G0 — on long moves the ok can be delayed or
+        # lost due to serial traffic while ? status polls are active. Completion is
+        # determined by wait_for_idle() instead.
         move_timeout = max(
             MIN_MOVEMENT_TIMEOUT,
             self.estimate_movement_time(current_angle, normalized_degrees) + MOVEMENT_TIMEOUT_BUFFER,
         )
-        sent = self.command_sender.send_command(command, wait_for_ok=True)
-        if not sent:
-            self._log(f"[Axis {axis_name}]   ✗ Command failed or timed out waiting for ok")
-            if not self.command_sender.is_moving():
-                return False
-            self._log(f"[Axis {axis_name}]   Movement started despite missing ok, waiting for completion...")
 
+        pause_polling = getattr(self.command_sender, 'pause_status_polling', None)
+        resume_polling = getattr(self.command_sender, 'resume_status_polling', None)
+        if pause_polling:
+            pause_polling()
+        try:
+            sent = self.command_sender.send_command(command, wait_for_ok=False)
+        finally:
+            if resume_polling:
+                resume_polling()
+
+        if not sent:
+            self._log(f"[Axis {axis_name}]   ✗ Failed to send movement command")
+            return False
+
+        # Allow GRBL time to accept the line and enter Run before we wait.
+        time.sleep(0.1)
         if not self.command_sender.wait_for_idle(timeout=move_timeout):
             self._log(f"[Axis {axis_name}]   ✗ Timed out waiting for movement to finish")
             return False

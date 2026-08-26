@@ -39,6 +39,15 @@ class StatusManager:
         self.running = False
         self.status_callbacks: List[Callable[[MachineState, Dict[str, float]], None]] = []
         self._position_logged = False
+        self._polling_paused = False
+    
+    def pause_polling(self) -> None:
+        """Temporarily stop sending ? status queries (reduces serial contention)."""
+        self._polling_paused = True
+    
+    def resume_polling(self) -> None:
+        """Resume ? status queries after pause_polling()."""
+        self._polling_paused = False
     
     def start(self) -> None:
         """Start status polling thread."""
@@ -71,6 +80,10 @@ class StatusManager:
         
         while self.running and self.serial_connection.is_connected():
             try:
+                if self._polling_paused:
+                    time.sleep(self.poll_interval)
+                    continue
+
                 # Try to acquire lock with short timeout
                 if self.command_sender.command_lock.acquire(timeout=STATUS_POLL_LOCK_TIMEOUT):
                     try:

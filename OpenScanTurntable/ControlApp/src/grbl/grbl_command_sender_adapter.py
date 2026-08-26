@@ -54,6 +54,14 @@ class GRBLCommandSenderAdapter(GRBLCommandSenderInterface):
         """Check if machine is currently moving."""
         return self.grbl_controller.is_moving()
 
+    def pause_status_polling(self) -> None:
+        """Pause background ? polling during sensitive serial operations."""
+        self.grbl_controller.pause_status_polling()
+
+    def resume_status_polling(self) -> None:
+        """Resume background ? polling."""
+        self.grbl_controller.resume_status_polling()
+
     def get_current_position(self) -> Dict[str, float]:
         """Get latest GRBL machine position (MPos) in axis units."""
         return self.grbl_controller.current_position
